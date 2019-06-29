@@ -4,21 +4,8 @@ use std::thread::ThreadId;
 use std::alloc::{GlobalAlloc, Layout, System, Alloc};
 use std::sync::atomic::{Ordering, AtomicBool,AtomicUsize};
 
-/// Maximal number of events that can be recorded.
-///
-/// A number of calls might reset this limit clear up used events.
-pub const MAX_EVENTS: usize = {
-    use std::convert::TryFrom;
-    
-    if let Some(x) = option_env!("ACHTUNG_ALLOCATION_MAX_EVENTS") {
-        x.len()
-    } else {
-        4
-    };
-//        let y = x.unwrap().len();
-//    usize::try_from(x);
-    33
-};
+mod config;
+
 
 /// Any event produced.
 
