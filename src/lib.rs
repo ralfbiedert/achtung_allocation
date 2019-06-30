@@ -21,20 +21,12 @@ struct Statistics {
     events: usize,
 }
 
-static mut INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+static mut READY: AtomicBool = AtomicBool::new(false);
 
 
 lazy_static! {
-    static ref MANAGER: Arc<RwLock<Manager>> = {
-        let rval = Arc::new(RwLock::new(Manager::new()));
-    
-        println!("DDDD");
-    
-        // Sets our initialization status
-        unsafe { INITIALIZED.fetch_and(true, Ordering::SeqCst) } ;
-        
-        rval
-    };
+    static ref MANAGER: Arc<RwLock<Manager>> = Arc::new(RwLock::new(Manager::new()));
 }
 
 
@@ -98,28 +90,28 @@ impl Event {
 }
 
 
-fn is_initialized() -> bool {
-    unsafe { INITIALIZED.load(Ordering::SeqCst) }
+fn is_ready() -> bool {
+    unsafe { READY.load(Ordering::SeqCst) }
 }
 
 unsafe impl GlobalAlloc for UserAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        
-        if is_initialized() {
-            let event = Event {
-                thread_id: None,
-                size: layout.size(),
-                align: layout.align(),
-                time: 0,
-            };
     
-            let mut manager = MANAGER.write().unwrap();
-            if manager.is_enabled() {
-                manager.record(event);
-                
-            }
-        }
-        
+//        if is_ready() {
+//            let event = Event {
+//                thread_id: None,
+//                size: layout.size(),
+//                align: layout.align(),
+//                time: 0,
+//            };
+//
+//            let mut manager = MANAGER.write().unwrap();
+//            if manager.is_enabled() {
+//                manager.record(event);
+//
+//            }
+//        }
+//
         System.alloc(layout)
     }
     
@@ -129,47 +121,21 @@ unsafe impl GlobalAlloc for UserAlloc {
 }
 
 pub fn measure<T: FnOnce() -> R, R>(label: &str, x: T) -> R {
-    // We must be initialized here, otherwise something went wrong.
-//    assert!(is_initialized());
     
     {
         let mut manager = MANAGER.write().unwrap();
-        manager.enabled(true);
+//        manager.enabled(true);
     }
     
-    
     let x = x();
-    
-    let statistics: Statistics = {
-        let mut manager = MANAGER.write().unwrap();
-        manager.enabled(false);
-        manager.statistics()
-    };
-    
-    println!("{:?} -- Events: {:?}, Bytes: {:?}", label, statistics.events, statistics.allocated);
-    
-    
+
+//    let statistics: Statistics = {
+//        let mut manager = MANAGER.write().unwrap();
+//        manager.enabled(false);
+//        manager.statistics()
+//    };
+//
+//    println!("{:?} -- Events: {:?}, Bytes: {:?}", label, statistics.events, statistics.allocated);
+//
     x
-    
-//    unsafe {
-//        MANAGER.track.store(true, Ordering::SeqCst);
-//
-//        let r = x();
-//
-//        MANAGER.track.store(false, Ordering::SeqCst);
-//
-//        let N = MANAGER.next.load(Ordering::SeqCst);
-//        let mut total_bytes = 0;
-//
-//        for i in 0..N {
-//            let event = MANAGER.events[i];
-//
-//            total_bytes += event.size;
-//        }
-//
-//        println!("{:?} -- Events: {:?}, Bytes: {:?}", label, N, total_bytes);
-//
-//        MANAGER.next.store(0, Ordering::SeqCst);
-//
-//        r
 }
