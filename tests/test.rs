@@ -1,7 +1,9 @@
 
-
+use achtung_allocation::measure;
 
 #[test]
-fn aa() {
-    println!("x");
+fn test_xxx() {
+    measure("xx", || {
+        let x = 5;
+    })
 }

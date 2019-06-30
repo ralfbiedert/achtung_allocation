@@ -1,28 +1,77 @@
 #![feature(allocator_api)]
 
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::ThreadId;
+use std::sync::{RwLock, Arc};
+
+use lazy_static::lazy_static;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 
 struct Manager {
     events: [Event; 1000000],
-    next: AtomicUsize,
-    track: AtomicBool,
+    next: usize,
+    track: bool,
 }
+
+
+#[derive(Default, Copy, Clone)]
+struct Statistics {
+    allocated: usize,
+    events: usize,
+}
+
+static mut INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+
+lazy_static! {
+    static ref MANAGER: Arc<RwLock<Manager>> = {
+        let rval = Arc::new(RwLock::new(Manager::new()));
+    
+        println!("DDDD");
+    
+        // Sets our initialization status
+        unsafe { INITIALIZED.fetch_and(true, Ordering::SeqCst) } ;
+        
+        rval
+    };
+}
+
 
 impl Manager {
     const fn new() -> Self {
         Self {
             events: [Event::new(); 1000000],
-            next: AtomicUsize::new(0),
-            track: AtomicBool::new(false),
+            next: 0,
+            track: false,
         }
+    }
+    
+    pub fn enabled(&mut self, val: bool) {
+        self.track = val;
+    }
+    
+    pub fn is_enabled(&mut self) -> bool {
+        self.track
+    }
+    
+    
+    pub fn record(&mut self, event: Event) {
+        self.events[self.next] = event;
+        self.next += 1;
+    }
+    
+    pub fn statistics(&self) -> Statistics {
+        let statistics = Statistics::default();
+        
+        for event in &self.events[0..self.next] {
+        
+        }
+        
+        statistics
     }
 }
 
-
-static mut MANAGER: Manager = Manager::new();
 
 pub struct UserAlloc;
 
@@ -48,18 +97,27 @@ impl Event {
     }
 }
 
+
+fn is_initialized() -> bool {
+    unsafe { INITIALIZED.load(Ordering::SeqCst) }
+}
+
 unsafe impl GlobalAlloc for UserAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if MANAGER.track.load(Ordering::SeqCst) {
-            // let x = thread::current(); // crash ?!
-            MANAGER.events[MANAGER.next.load(Ordering::SeqCst)] = Event {
+        
+        if is_initialized() {
+            let event = Event {
                 thread_id: None,
                 size: layout.size(),
                 align: layout.align(),
                 time: 0,
             };
     
-            MANAGER.next.fetch_add(1, Ordering::SeqCst);
+            let mut manager = MANAGER.write().unwrap();
+            if manager.is_enabled() {
+                manager.record(event);
+                
+            }
         }
         
         System.alloc(layout)
@@ -70,35 +128,48 @@ unsafe impl GlobalAlloc for UserAlloc {
     }
 }
 
-fn measure<T: FnOnce() -> R, R>(label: &str, x: T) -> R {
-    unsafe {
-        MANAGER.track.store(true, Ordering::SeqCst);
-        
-        let r = x();
+pub fn measure<T: FnOnce() -> R, R>(label: &str, x: T) -> R {
+    // We must be initialized here, otherwise something went wrong.
+//    assert!(is_initialized());
     
-        MANAGER.track.store(false, Ordering::SeqCst);
-        
-        let N = MANAGER.next.load(Ordering::SeqCst);
-        let mut total_bytes = 0;
-        
-        for i in 0..N {
-            let event = MANAGER.events[i];
-            
-            total_bytes += event.size;
-        }
-        
-        println!("{:?} -- Events: {:?}, Bytes: {:?}", label, N, total_bytes);
-    
-        MANAGER.next.store(0, Ordering::SeqCst);
-        
-        r
+    {
+        let mut manager = MANAGER.write().unwrap();
+        manager.enabled(true);
     }
-}
-
-fn ff<T: Fn()>(f: T) {
-    f()
-}
-
-pub fn main() {
-
+    
+    
+    let x = x();
+    
+    let statistics: Statistics = {
+        let mut manager = MANAGER.write().unwrap();
+        manager.enabled(false);
+        manager.statistics()
+    };
+    
+    println!("{:?} -- Events: {:?}, Bytes: {:?}", label, statistics.events, statistics.allocated);
+    
+    
+    x
+    
+//    unsafe {
+//        MANAGER.track.store(true, Ordering::SeqCst);
+//
+//        let r = x();
+//
+//        MANAGER.track.store(false, Ordering::SeqCst);
+//
+//        let N = MANAGER.next.load(Ordering::SeqCst);
+//        let mut total_bytes = 0;
+//
+//        for i in 0..N {
+//            let event = MANAGER.events[i];
+//
+//            total_bytes += event.size;
+//        }
+//
+//        println!("{:?} -- Events: {:?}, Bytes: {:?}", label, N, total_bytes);
+//
+//        MANAGER.next.store(0, Ordering::SeqCst);
+//
+//        r
 }
